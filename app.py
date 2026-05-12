@@ -18,6 +18,47 @@ from typing import List, Optional, Tuple
 import streamlit as st
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
+# ============================================================
+# AUTO-INSTALACIÓN / VERIFICACIÓN DE CHROMIUM PLAYWRIGHT
+# Streamlit Cloud instala el paquete playwright, pero a veces no descarga
+# el navegador Chromium. Este bloque lo descarga automáticamente si falta.
+# ============================================================
+
+def asegurar_chromium_playwright() -> str:
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    try:
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as p:
+            ruta = Path(p.chromium.executable_path)
+            if ruta.exists():
+                return f"Chromium disponible: {ruta}"
+    except Exception:
+        pass
+
+    try:
+        resultado = subprocess.run(
+            [sys.executable, "-m", "playwright", "install", "chromium"],
+            capture_output=True,
+            text=True,
+            timeout=180,
+            check=False,
+        )
+        if resultado.returncode == 0:
+            return "Chromium instalado correctamente por Playwright."
+        return (
+            "No se pudo instalar Chromium automáticamente.\n"
+            f"STDOUT: {resultado.stdout[-1500:]}\n"
+            f"STDERR: {resultado.stderr[-1500:]}"
+        )
+    except Exception as e:
+        return f"No se pudo ejecutar playwright install chromium: {repr(e)}"
+
+
+ESTADO_CHROMIUM = asegurar_chromium_playwright()
+
 
 # ============================================================
 # CONFIGURACIÓN
@@ -269,8 +310,14 @@ def descargar_reporte_opi(
 
     with sync_playwright() as p:
         browser = p.chromium.launch(
-            headless=navegador_oculto,
+            headless=True if os.environ.get("STREAMLIT_SERVER_HEADLESS") else navegador_oculto,
             slow_mo=250 if not navegador_oculto else 0,
+            args=[
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+                "--disable-setuid-sandbox",
+            ],
         )
         context = browser.new_context(
             accept_downloads=True,
@@ -608,6 +655,10 @@ st.info(
     "Flujo automático: Login → Reportes → OPI → Reporte OPI Autorización → fechas → generar → exportar Excel."
 )
 
+with st.expander("🧩 Estado Playwright / Chromium", expanded=False):
+    st.code(ESTADO_CHROMIUM, language="text")
+    st.caption("En Streamlit Cloud el navegador debe ejecutarse oculto/headless.")
+
 with st.expander("🔐 Acceso", expanded=True):
     usuario = st.text_input("Usuario", placeholder="Ingrese usuario")
     clave = st.text_input("Contraseña", type="password", placeholder="Ingrese contraseña")
@@ -625,8 +676,8 @@ with st.expander("📅 Fechas", expanded=True):
 with st.expander("🧪 Opciones de prueba", expanded=True):
     navegador_oculto = st.checkbox(
         "Ejecutar navegador oculto",
-        value=False,
-        help="Para probar, dejar desmarcado. Así se ve el Chrome automático.",
+        value=True if os.environ.get("STREAMLIT_SERVER_HEADLESS") else False,
+        help="En Streamlit Cloud debe quedar marcado. En PC local puede desmarcarlo para ver Chrome.",
     )
 
 st.divider()
