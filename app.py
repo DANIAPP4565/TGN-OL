@@ -10,6 +10,7 @@
 # ============================================================
 
 import os
+import platform
 import traceback
 from datetime import date, timedelta
 from pathlib import Path
@@ -309,14 +310,22 @@ def descargar_reporte_opi(
     archivo_final: Optional[Path] = None
 
     with sync_playwright() as p:
+        # IMPORTANTE:
+        # Streamlit Cloud/Linux no tiene pantalla gráfica (XServer).
+        # Por eso Chromium DEBE ejecutarse en modo headless=True.
+        # En Windows local se permite ver el navegador si el usuario desmarca el checkbox.
+        es_windows = platform.system().lower().startswith("win")
+        headless_final = True if not es_windows else navegador_oculto
+
         browser = p.chromium.launch(
-            headless=True if os.environ.get("STREAMLIT_SERVER_HEADLESS") else navegador_oculto,
-            slow_mo=250 if not navegador_oculto else 0,
+            headless=headless_final,
+            slow_mo=250 if (es_windows and not headless_final) else 0,
             args=[
                 "--no-sandbox",
                 "--disable-dev-shm-usage",
                 "--disable-gpu",
                 "--disable-setuid-sandbox",
+                "--disable-software-rasterizer",
             ],
         )
         context = browser.new_context(
@@ -674,10 +683,15 @@ with st.expander("📅 Fechas", expanded=True):
         fecha_hasta = st.date_input("Hasta", value=hoy, format="DD/MM/YYYY")
 
 with st.expander("🧪 Opciones de prueba", expanded=True):
+    es_windows_ui = platform.system().lower().startswith("win")
     navegador_oculto = st.checkbox(
         "Ejecutar navegador oculto",
-        value=True if os.environ.get("STREAMLIT_SERVER_HEADLESS") else False,
-        help="En Streamlit Cloud debe quedar marcado. En PC local puede desmarcarlo para ver Chrome.",
+        value=True if not es_windows_ui else False,
+        disabled=not es_windows_ui,
+        help=(
+            "En Streamlit Cloud/Linux debe ejecutarse oculto porque no hay pantalla gráfica/XServer. "
+            "En Windows local puede desmarcarlo para ver Chrome."
+        ),
     )
 
 st.divider()
@@ -738,12 +752,44 @@ st.divider()
 st.markdown("### Comando correcto para correr")
 st.code('py -3.12 -m streamlit run app.py', language="bat")
 
-st.markdown("### Instalación si falta algo")
+st.markdown("### Instalación si falta algo en Windows local")
 st.code(
     """
 py -3.12 -m pip install --upgrade pip
 py -3.12 -m pip install streamlit playwright pandas openpyxl python-dotenv
 py -3.12 -m playwright install chromium
+py -3.12 -m streamlit run app.py
     """,
     language="bat",
+)
+
+st.markdown("### requirements.txt para Streamlit Cloud")
+st.code(
+    """
+streamlit
+playwright
+pandas
+openpyxl
+python-dotenv
+    """,
+    language="text",
+)
+
+st.markdown("### packages.txt para Streamlit Cloud")
+st.code(
+    """
+libcups2
+libnss3
+libatk-bridge2.0-0
+libgbm1
+libxkbcommon0
+libxcomposite1
+libxdamage1
+libxfixes3
+libxrandr2
+libasound2
+libpangocairo-1.0-0
+libpango-1.0-0
+    """,
+    language="text",
 )
